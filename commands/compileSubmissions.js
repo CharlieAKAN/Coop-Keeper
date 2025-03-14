@@ -60,22 +60,20 @@ module.exports = {
                 extractedSubmissions.push(attachment.url);
             });
 
-            // If no links or attachments, use raw text message
-            if (extractedSubmissions.length === 0 && message.content.trim() !== '') {
-                extractedSubmissions.push(message.content.trim());
+            // If NO links or attachments, ignore the message
+            if (extractedSubmissions.length === 0) {
+                continue;
             }
 
-            // Store submissions with user details
-            if (extractedSubmissions.length > 0) {
-                if (!userSubmissions[message.author.id]) {
-                    userSubmissions[message.author.id] = [];
-                }
-                userSubmissions[message.author.id].push(...extractedSubmissions);
+            // Store valid submissions with user details
+            if (!userSubmissions[message.author.id]) {
+                userSubmissions[message.author.id] = [];
             }
+            userSubmissions[message.author.id].push(...extractedSubmissions);
         }
 
         if (Object.keys(userSubmissions).length === 0) {
-            return interaction.reply({ content: 'No valid submissions found.', ephemeral: true });
+            return interaction.reply({ content: 'No valid submissions found (ignored text-only messages).', ephemeral: true });
         }
 
         if (fetchAll) {
