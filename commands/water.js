@@ -83,7 +83,7 @@ module.exports = {
                         `You just added **${amount} oz** of water to your daily tally!\n\n` +
                         `**Current Weekly Total:** ${data[userId].total} oz\n\n` +
                         `Keep it up! Remember, staying hydrated can boost your energy, mood, and overall health.\n\n` +
-                        `Anyone can use command </water:1352439284975800449> to be added to the water leaderboard!`
+                        `Anyone can use command </water:1358968131397091409> to be added to the water leaderboard!`
                     );
 
                 await interaction.reply({ embeds: [embed] });
