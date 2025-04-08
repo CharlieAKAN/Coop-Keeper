@@ -5,7 +5,12 @@ require('dotenv').config();
 const cron = require('node-cron');
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers // <-- THIS is crucial
+    ]
 });
 
 client.commands = new Collection();
@@ -22,7 +27,7 @@ client.once('ready', () => {
 
     // 1) Schedule the daily random reminder at 12 PM Central
     cron.schedule(
-        '0 12 * * *', 
+        '20 12 * * *', 
         async () => {
             try {
                 // Make sure you have GUILD_ID in your .env
