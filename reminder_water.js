@@ -24,7 +24,7 @@ module.exports = (client) => {
                 if (!channel) return;
 
                 // 5) Send the daily reminder
-                await channel.send(`Hey ${randomMember}, have you hydrated today? ☀️💧`);
+                await channel.send(`Hey ${randomMember}, have you hydrated today? ☀️💧\n Use command </water:1358968131397091409> to let us know how much!`);
             } catch (error) {
                 console.error('Error with daily water reminder:', error);
             }

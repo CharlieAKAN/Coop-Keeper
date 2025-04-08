@@ -2,123 +2,143 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
-// Path to the JSON where we'll store weekly data
+// Location of your data file
 const dataFilePath = path.join(__dirname, '..', 'data', 'waterData.json');
 
-// Helper function to load the data
+// Create or load data
 function loadData() {
     try {
-        // Make sure the folder exists
         fs.mkdirSync(path.dirname(dataFilePath), { recursive: true });
-
         if (!fs.existsSync(dataFilePath)) {
-            fs.writeFileSync(dataFilePath, JSON.stringify({}));
+            // We'll store:
+            // {
+            //   "total": 0,        // Guild-wide total
+            //   "users": {}        // Per-user totals
+            // }
+            fs.writeFileSync(dataFilePath, JSON.stringify({ total: 0, users: {} }));
         }
-        const rawData = fs.readFileSync(dataFilePath, 'utf8');
-        return JSON.parse(rawData);
+        const raw = fs.readFileSync(dataFilePath, 'utf8');
+        return JSON.parse(raw);
     } catch (err) {
-        console.error('Error reading water data:', err);
-        return {};
+        console.error('Error loading water data:', err);
+        // Fallback if something goes wrong
+        return { total: 0, users: {} };
     }
 }
 
-// Helper function to save the data
 function saveData(data) {
     try {
-        // Make sure the folder exists
         fs.mkdirSync(path.dirname(dataFilePath), { recursive: true });
-
         fs.writeFileSync(dataFilePath, JSON.stringify(data, null, 2));
     } catch (err) {
-        console.error('Error writing water data:', err);
+        console.error('Error saving water data:', err);
     }
 }
 
-// Build the slash commands
+// Build a water-progress bar with emojis
+function createWaterProgressBar(current, goal, length = 10) {
+    const ratio = current / goal;
+    const filledSlots = Math.min(length, Math.round(ratio * length));
+    const emptySlots = length - filledSlots;
+
+    // Use 💧 for filled, ⬜ for empty
+    const bar = '💧'.repeat(filledSlots) + '⬜'.repeat(emptySlots);
+    return bar;
+}
+
+// Random motivational lines
+const motivationLines = [
+    "Remember, water is life!",
+    "Stay hydrated, champion!",
+    "Your body thanks you for the H2O!",
+    "Hydration heroes never quit!",
+    "You're basically an aquatic superhero now!"
+];
+
+// Weekly goal from .env or fallback to 5000
+const weeklyGoal = parseInt(process.env.WEEKLY_WATER_GOAL) || 5000;
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('water')
-        .setDescription('Track your water intake.')
+        .setDescription('Track your guild’s weekly water goal (with individual contributions).')
         .addSubcommand(subcommand =>
             subcommand
                 .setName('add')
-                .setDescription('Add water intake in ounces (oz).')
+                .setDescription('Add water intake (oz) to the guild total.')
                 .addIntegerOption(option =>
                     option
                         .setName('amount')
-                        .setDescription('How many oz of water you drank?')
-                        .setRequired(true),
-                ))
+                        .setDescription('Number of ounces to add')
+                        .setRequired(true)
+                )
+        )
         .addSubcommand(subcommand =>
             subcommand
-                .setName('leaderboard')
-                .setDescription('Show the current weekly water leaderboard.'),
+                .setName('goal')
+                .setDescription('Show progress toward the weekly water goal.')
         ),
 
     async execute(interaction) {
         const subcommand = interaction.options.getSubcommand();
         const data = loadData();
 
+        // Ensure data.users exists
+        if (!data.users) data.users = {};
+        // Also ensure data.total is a number
+        if (typeof data.total !== 'number') data.total = 0;
+
         switch (subcommand) {
             case 'add': {
                 const amount = interaction.options.getInteger('amount');
                 const userId = interaction.user.id;
 
-                // If user hasn't recorded any water yet this week, start at 0
-                if (!data[userId]) {
-                    data[userId] = { total: 0 };
+                // 1) Increment guild total
+                data.total += amount;
+
+                // 2) Increment user's personal total
+                if (!data.users[userId]) {
+                    data.users[userId] = 0;
                 }
+                data.users[userId] += amount;
 
-                // Increment their total by the specified amount
-                data[userId].total += amount;
-
-                // Save data
                 saveData(data);
 
-                // Build embed
+                // Get user’s total
+                const userTotal = data.users[userId];
+
+                // Random motivational line
+                const randomIndex = Math.floor(Math.random() * motivationLines.length);
+                const randomMotivation = motivationLines[randomIndex];
+
+                // Build an embed response
                 const embed = new EmbedBuilder()
-                    .setTitle('💧Hydration Station!🥤')
-                    .setColor(0x00FF00) // pick any embed color you like
+                    .setTitle('💧 Hydration Station! 🥤')
+                    .setColor(0x00FFFF)
                     .setDescription(
-                        `You just added **${amount} oz** of water to your daily tally!\n\n` +
-                        `**Current Weekly Total:** ${data[userId].total} oz\n\n` +
-                        `Keep it up! Remember, staying hydrated can boost your energy, mood, and overall health.\n\n` +
-                        `Anyone can use command </water:1358968131397091409> to be added to the water leaderboard!`
+                        `You just added **${amount} oz**!\n\n` +
+                        `**Your Total This Week:** ${userTotal} oz\n` +
+                        `**Coop Total:** ${data.total} / ${weeklyGoal} oz\n\n` +
+                        `${randomMotivation}\n\n` +
+                        `**Anyone can add to the water goal using </water add:1358968131397091409>!**`
                     );
 
                 await interaction.reply({ embeds: [embed] });
                 break;
             }
 
-            case 'leaderboard': {
-                // Build an array of [userId, total]
-                const leaderboardArray = Object.entries(data).map(([userId, info]) => {
-                    return { userId, total: info.total };
-                });
+            case 'goal': {
+                // Show a progress bar for the guild total
+                const bar = createWaterProgressBar(data.total, weeklyGoal, 10);
 
-                // Sort descending by total
-                leaderboardArray.sort((a, b) => b.total - a.total);
-
-                if (leaderboardArray.length === 0) {
-                    await interaction.reply('No data yet for this week!');
-                    return;
-                }
-
-                // Create a text string to show the standings
-                let leaderboardText = '';
-                for (let i = 0; i < leaderboardArray.length; i++) {
-                    const { userId, total } = leaderboardArray[i];
-                    const userTag = `<@${userId}>`;
-                    leaderboardText += `**${i + 1}.** ${userTag} - ${total} oz\n`;
-                }
-
-                // Build embed
                 const embed = new EmbedBuilder()
-                    .setTitle('💧Weekly Water Leaderboard💧')
+                    .setTitle('💧Weekly Water Goal Progress🌟')
                     .setColor(0x1E90FF)
                     .setDescription(
-                        leaderboardText + 
-                        '\n\n**Stay hydrated, stay healthy!**'
+                        `**Goal:** ${weeklyGoal} oz\n` +
+                        `**Current Coop Total:** ${data.total} oz\n\n` +
+                        `${bar}\n\n` +
+                        `Keep going! Every drop counts!`
                     );
 
                 await interaction.reply({ embeds: [embed] });

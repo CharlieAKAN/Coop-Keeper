@@ -72,59 +72,48 @@ client.once('ready', () => {
         '0 12 * * 0', 
         async () => {
             try {
-                // 1) Read the final scoreboard
                 const dataFilePath = path.join(__dirname, 'data', 'waterData.json');
-                
-                let embedDescription = '';
-                let data = {};
-
-                // Check if our data file exists
+                let finalTotal = 0;
+    
+                // If file exists, read it
                 if (fs.existsSync(dataFilePath)) {
-                    data = JSON.parse(fs.readFileSync(dataFilePath, 'utf8'));
-
-                    const leaderboardArray = Object.entries(data).map(([userId, info]) => {
-                        return { userId, total: info.total };
-                    });
-
-                    // Sort descending by total
-                    leaderboardArray.sort((a, b) => b.total - a.total);
-
-                    if (leaderboardArray.length === 0) {
-                        embedDescription = 'No data this week!';
-                    } else {
-                        // Build the leaderboard text
-                        for (let i = 0; i < leaderboardArray.length; i++) {
-                            const { userId, total } = leaderboardArray[i];
-                            embedDescription += `**${i + 1}.** <@${userId}> - ${total} oz\n`;
-                        }
-                    }
-                } else {
-                    embedDescription = 'No data this week!';
+                    const data = JSON.parse(fs.readFileSync(dataFilePath, 'utf8'));
+                    finalTotal = data.total || 0;
                 }
-
-                // 2) Build the embed
+    
+                // Compare to the weekly goal
+                const weeklyGoal = parseInt(process.env.WEEKLY_WATER_GOAL) || 5000;
+                let resultDescription = `We aimed for **${weeklyGoal} oz** this week. We reached **${finalTotal} oz**!`;
+    
+                if (finalTotal >= weeklyGoal) {
+                    const overage = finalTotal - weeklyGoal;
+                    resultDescription += `\n**Goal met!** We even went over by **${overage} oz**! Great job!`;
+                } else {
+                    const short = weeklyGoal - finalTotal;
+                    resultDescription += `\nWe were **${short} oz** short, but let’s crush it next week!`;
+                }
+    
                 const embed = new EmbedBuilder()
-                    .setTitle('💧Weekly Water Leaderboard - Final💧')
+                    .setTitle('💧 Weekly Water Goal - Final 🏁')
                     .setColor(0x1E90FF)
-                    .setDescription(embedDescription);
-
-                // 3) Post to the channel
+                    .setDescription(resultDescription);
+    
+                // Post to the channel
                 const channel = await client.channels.fetch(process.env.WATER_LEADERBOARD_CHANNEL_ID);
                 if (channel) {
-                    // Send the embed
                     await channel.send({ embeds: [embed] });
                 }
-
-                // 4) Reset data for the new week
-                fs.writeFileSync(dataFilePath, JSON.stringify({}));
-                
+    
+                // Reset data
+                fs.writeFileSync(dataFilePath, JSON.stringify({ total: 0 }));
+    
             } catch (error) {
-                console.error('Error with weekly leaderboard reset:', error);
+                console.error('Error with weekly water goal reset:', error);
             }
         },
         {
             scheduled: true,
-            timezone: 'America/Chicago' // Forces Sunday 12 PM Central Time
+            timezone: 'America/Chicago'
         }
     );
 });
