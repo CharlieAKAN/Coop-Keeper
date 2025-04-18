@@ -1,64 +1,65 @@
-// reminder_water.js  (Energy‑Drink Gremlin edition)
-import cron from 'node-cron';
-import OpenAI from 'openai';
-import dotenv from 'dotenv';
-dotenv.config();
+// reminder_water.js  (CommonJS — single‑greeting edition)
+const cron   = require('node-cron');
+const OpenAI = require('openai').default;
+require('dotenv').config();
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-nano';
+const MODEL  = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
-export default (client) => {
+module.exports = (client) => {
   cron.schedule(
-    '0 12 * * *',
+    '* 12 * * *',                       // 6 :20 PM CT every day
     async () => {
+      console.log('[hydration cron fired]', new Date().toISOString());
+
       try {
         // 1) random (non‑bot) member
-        const guild   = await client.guilds.fetch(process.env.GUILD_ID);
-        const humans  = (await guild.members.fetch()).filter(m => !m.user.bot);
-        const member  = humans.random();
+        const guild  = await client.guilds.fetch(process.env.GUILD_ID);
+        const humans = (await guild.members.fetch()).filter(m => !m.user.bot);
+        const member = humans.random();
         if (!member) return;
 
-        // 2) generate one sentence of hyper‑enthusiasm
-        let line = 'Bounce up and chug that H₂O, legend! 💦'; // fallback
+        // 2) fallback if OpenAI coughs
+        let line = 'time to splash some H₂O into that heroic mouth! 💧';
+
+        // 3) grab cheeky one‑liner (no greeting)
         try {
-          const { choices } = await openai.chat.completions.create({
+          const res = await openai.chat.completions.create({
             model: MODEL,
-            max_tokens: 30,
-            temperature: 0.95,
+            temperature: 1.0,
+            max_tokens: 40,
             messages: [
               {
                 role: 'system',
                 content: `
-Speak like an over‑caffeinated hype friend who thinks hydration is a thrill sport:
-• one sentence, max 18 words
-• ends with at least one water emoji
-• big energy, exclamation points, playful wording
+You are an over‑caffeinated yet cheeky hype friend.
+Write ONE playful, dynamic sentence (≤18 words) reminding someone to drink water.
+⚠️ Do NOT greet or mention the user; they'll already be tagged.
+Optional onomatopoeia like splash or gulp welcome.
+End with at least one water emoji (💦,💧,🚰).
                 `.trim(),
               },
               { role: 'user', content: 'Give me today’s reminder!' },
             ],
           });
-          line = choices[0].message.content.trim();
+          line = res.choices[0].message.content.trim();
         } catch (apiErr) {
-          console.warn('OpenAI hiccup, using fallback line.', apiErr);
+          console.warn('OpenAI hiccup – using fallback line.', apiErr);
         }
 
-        // 3) send it
+        // 4) send it (single mention)
         const channel = await client.channels.fetch(
           process.env.WATER_LEADERBOARD_CHANNEL_ID
         );
         if (!channel) return;
 
         await channel.send(
-          `Hey ${member}, ${line}\nUse </water:1358968131397091409> to log your slurps!`
+          `${member} — ${line}\n\nUse </water:1358968131397091409> to log your slurps!`
         );
       } catch (err) {
         console.error('Daily water reminder failed:', err);
       }
     },
-    {
-      scheduled: true,
-      timezone: 'America/Chicago',
-    }
+    { scheduled: true, timezone: 'America/Chicago' }
   );
 };

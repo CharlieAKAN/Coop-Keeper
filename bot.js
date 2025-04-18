@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 const cron = require('node-cron');
+const reminderWater = require('./reminder_water.js');
 
 const client = new Client({
     intents: [
@@ -24,48 +25,7 @@ for (const file of commandFiles) {
 
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
-
-    // 1) Schedule the daily random reminder at 12 PM Central
-    cron.schedule(
-        '20 12 * * *', 
-        async () => {
-            try {
-                // Make sure you have GUILD_ID in your .env
-                const guildId = process.env.GUILD_ID;
-                const reminderChannelId = process.env.REMINDER_CHANNEL_ID;
-
-                if (!guildId || !reminderChannelId) {
-                    console.error('Missing GUILD_ID or REMINDER_CHANNEL_ID in .env!');
-                    return;
-                }
-
-                // Fetch the guild
-                const guild = await client.guilds.fetch(guildId);
-                // Fetch all members (be mindful if your server is huge)
-                const members = await guild.members.fetch();
-                // Pick one random member
-                const randomMember = members.random();
-
-                // Fetch the channel to send the reminder
-                const reminderChannel = await client.channels.fetch(reminderChannelId);
-                if (!reminderChannel) {
-                    console.error('Reminder channel not found!');
-                    return;
-                }
-
-                // Send the daily reminder
-                await reminderChannel.send(
-                    `Hey ${randomMember}, have you hydrated today? ☀️💧`
-                );
-            } catch (error) {
-                console.error('Error with daily water reminder:', error);
-            }
-        },
-        {
-            scheduled: true,
-            timezone: 'America/Chicago' // Runs daily at 12 PM CT
-        }
-    );
+    reminderWater(client);
 
     // 2) Schedule the Sunday leaderboard reset for 12 PM Central
     cron.schedule(
