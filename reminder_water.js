@@ -8,7 +8,7 @@ const MODEL  = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 module.exports = (client) => {
   cron.schedule(
-    '* 12 * * *',                       // 6 :20 PM CT every day
+    '0 12 * * *',                       // 6 :20 PM CT every day
     async () => {
       console.log('[hydration cron fired]', new Date().toISOString());
 
