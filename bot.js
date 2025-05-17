@@ -25,7 +25,7 @@ for (const file of commandFiles) {
 
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
-    reminderWater(client);
+    // reminderWater(client);
 
     // 2) Schedule the Sunday leaderboard reset for 12 PM Central
     cron.schedule(
