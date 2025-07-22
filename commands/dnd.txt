@@ -1,0 +1,465 @@
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
+const OpenAI = require('openai');
+require('dotenv').config();
+
+const charactersFilePath = path.join(__dirname, '../data/characters.json');
+const sessionFilePath = path.join(__dirname, '../data/session.json');
+const actionsFilePath = path.join(__dirname, '../data/actions.json');
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const ALLOWED_DMS = [
+  '123456789012345678', // user 1
+  '222233334444555566', // user 2
+  '93071518229078016'   // you, Charlie
+];
+
+const ttsInstructions = `
+Voice Affect: Low, dramatic storyteller.
+Tone: Deep, suspenseful, with pauses to heighten drama.
+Emotion: Intense yet controlled.
+Emphasis: Highlight key sensory phrases.
+
+For quoted dialog, shift delivery:
+- For women: lighter, expressive, warmer.
+- For old men: raspier, slow, creaky, a bit trembling.
+- For villains: deep, menacing, with sinister emphasis.
+Pause before and after dialog to distinguish speakers.
+Clearly mark dialog from narration.
+`.trim();
+
+function saveSession(session) {
+  fs.writeFileSync(sessionFilePath, JSON.stringify(session, null, 2));
+}
+
+function addPlayerToParty(session, playerObj) {
+  if (!session.party) session.party = [];
+  // Prevent duplicates
+  if (!session.party.find(p => p.userId === playerObj.userId)) {
+    session.party.push(playerObj);
+  }
+}
+
+function getPartyListString(session) {
+  if (!session.party || session.party.length === 0) return '';
+  return session.party.map(p => `${p.name} the ${p.class}`).join(', ');
+}
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('dnd')
+    .setDescription('Interact with the ongoing DnD adventure.')
+    .addSubcommand(sub =>
+      sub
+        .setName('start')
+        .setDescription('Start a new campaign. This will delete all previous progress!')
+        .addStringOption(opt =>
+          opt.setName('theme')
+            .setDescription('Describe what kind of campaign or adventure you want (optional)')
+            .setRequired(false)
+        )
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName('join')
+        .setDescription('Join the adventure as a new character.')
+        .addStringOption(opt =>
+          opt.setName('name')
+            .setDescription("Your character's name")
+            .setRequired(true)
+        )
+        .addStringOption(opt =>
+          opt.setName('class')
+            .setDescription("Your character's class (e.g., wizard, rogue)")
+            .setRequired(true)
+        )
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName('act')
+        .setDescription('Perform an action in the adventure.')
+        .addStringOption(opt =>
+          opt.setName('action')
+            .setDescription('Describe what your character does')
+            .setRequired(true)
+        )
+    ),
+
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+
+    // load or init characters.json
+    let characters = [];
+    if (fs.existsSync(charactersFilePath)) {
+      characters = JSON.parse(fs.readFileSync(charactersFilePath, 'utf8'));
+    }
+
+    if (sub === 'start') {
+      if (!ALLOWED_DMS.includes(interaction.user.id)) {
+        return interaction.reply({
+          content: "🚫 Only the designated Dungeon Masters can start or reset the campaign.",
+          ephemeral: true
+        });
+      }
+      await interaction.deferReply();
+
+      // ************ WIPE FILES: campaign reset ************
+      fs.writeFileSync(charactersFilePath, JSON.stringify([], null, 2));
+      // Wipe session but add empty party array!
+      const emptySession = { party: [] };
+      saveSession(emptySession);
+      fs.writeFileSync(actionsFilePath, JSON.stringify([], null, 2));
+      // *****************************************************
+
+      // Handle theme/idea prompt
+      const theme = interaction.options.getString('theme');
+      let campaignPrompt;
+      if (theme && theme.trim().length > 0) {
+        campaignPrompt = `You are a Dungeon Master starting a brand new Dungeons & Dragons campaign based on this idea: "${theme}". Generate the opening scene, location, atmosphere, and initial hook in a vivid and engaging narrative that fits this theme. Name the location and highlight a central NPC or quest hook. Keep it 4–6 sentences.`;
+      } else {
+        campaignPrompt = `You are a Dungeon Master starting a brand new Dungeons & Dragons campaign. Generate the opening scene, location, atmosphere, and initial hook in a vivid and engaging narrative that sets the tone for adventure. Name the location and highlight a central NPC or quest hook. Keep it 4–6 sentences.`;
+      }
+
+      let intro = '';
+      let sessionFromStory = {
+        location: 'Unknown',
+        situation: 'Unknown',
+        npc_focus: 'Unknown',
+        party: []
+      };
+
+      try {
+        // Generate the campaign intro
+        const res = await openai.chat.completions.create({
+          model: 'o3-mini-2025-01-31',
+          messages: [
+            { role: 'system', content: 'You are a D&D Dungeon Master starting a new campaign.' },
+            { role: 'user', content: campaignPrompt }
+          ]
+        });
+        intro = res.choices[0].message.content;
+
+        // Extract location, situation, npc_focus from the intro using GPT
+        try {
+          const extractRes = await openai.chat.completions.create({
+            model: 'o3-mini-2025-01-31',
+            messages: [
+              { role: 'system', content: 'Extract the location, situation, and main NPC/quest hook from this campaign intro for tracking story state. Return as JSON with keys: location, situation, npc_focus. Keep each value short.' },
+              { role: 'user', content: intro }
+            ]
+          });
+          const rawJson = extractRes.choices[0].message.content;
+          const cleanJson = rawJson.replace(/```json|```/g, '').trim();
+          const core = JSON.parse(cleanJson);
+          sessionFromStory.location = core.location || sessionFromStory.location;
+          sessionFromStory.situation = core.situation || sessionFromStory.situation;
+          sessionFromStory.npc_focus = core.npc_focus || sessionFromStory.npc_focus;
+        } catch (e) {
+          console.error('Failed to extract story state:', e);
+        }
+
+        saveSession(sessionFromStory);
+
+        // TTS for the campaign intro
+        let audioBuffer;
+        try {
+          const ttsResponse = await openai.audio.speech.create({
+            model: 'gpt-4o-mini-tts',
+            voice: 'ash',
+            input: intro,
+            instructions: ttsInstructions,
+            response_format: 'mp3',
+          });
+
+          if (ttsResponse.data) {
+            audioBuffer = Buffer.isBuffer(ttsResponse.data) ? ttsResponse.data : Buffer.from(ttsResponse.data);
+          } else if (ttsResponse.body) {
+            const chunks = [];
+            for await (const chunk of ttsResponse.body) {
+              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+            }
+            audioBuffer = Buffer.concat(chunks);
+          }
+        } catch (ttsErr) {
+          console.error('Intro TTS error:', ttsErr);
+        }
+
+        // Send the intro as a plain message with audio as followup (always visible/playable)
+        const msg = {
+          content: `🎲 **A New Campaign Begins!**\n${intro}`
+        };
+        await interaction.followUp(msg);
+        if (audioBuffer) {
+          await interaction.followUp({
+            content: '🔊 **Listen to the campaign intro narration**',
+            files: [{ attachment: audioBuffer, name: 'campaign_intro.mp3' }]
+          });
+        }
+        return;
+      } catch (err) {
+        console.error('Failed to generate campaign intro:', err);
+        return interaction.followUp('❌ Something went wrong generating the campaign intro.');
+      }
+    }
+
+    if (sub === 'join') {
+      const name = interaction.options.getString('name');
+      const cls = interaction.options.getString('class');
+      const uid = interaction.user.id;
+
+      if (characters.find(c => c.userId === uid)) {
+        return interaction.reply({ content: 'You already have a character!', ephemeral: true });
+      }
+
+      characters.push({ userId: uid, name, class: cls });
+      fs.writeFileSync(charactersFilePath, JSON.stringify(characters, null, 2));
+
+      return interaction.reply(`🛡️ **${name}** the ${cls} has entered the adventure!`);
+    }
+
+    if (sub === 'act') {
+      const action = interaction.options.getString('action');
+      const uid = interaction.user.id;
+      const player = characters.find(c => c.userId === uid);
+
+      if (!player) {
+        return interaction.reply({ content: 'First, create your character with `/dnd join`.', ephemeral: true });
+      }
+
+      await interaction.deferReply();
+
+      // Always load session.json for the scene state
+      let session = {
+        location: 'The Rusty Cauldron Tavern',
+        situation: 'The party has just arrived in town and is regrouping.',
+        npc_focus: 'A suspicious half-elf sits alone, watching the entrance.',
+        party: []
+      };
+      if (fs.existsSync(sessionFilePath)) {
+        session = JSON.parse(fs.readFileSync(sessionFilePath, 'utf8'));
+        if (!session.party) session.party = [];
+      }
+
+      // If the action is about entering/joining or being in the main scene, add to party
+      const joinKeywords = [
+        'enter', 'walk in', 'walk into', 'join', 'arrive', 'step inside', 'step in', 'go into', 'come in'
+      ];
+      const actionLC = action.toLowerCase();
+      const isJoiningScene = joinKeywords.some(keyword => actionLC.includes(keyword)) || session.party.length === 0;
+
+      if (isJoiningScene) {
+        addPlayerToParty(session, {
+          userId: uid,
+          name: player.name,
+          class: player.class
+        });
+        saveSession(session);
+      }
+
+      // Party prompt for GPT
+      const partyListString = getPartyListString(session);
+
+      // -- Dice Roll Decision --
+      let requiresRoll = false;
+      try {
+        const rollCheck = await openai.chat.completions.create({
+          model: 'o3-mini-2025-01-31',
+          messages: [
+            {
+              role: 'system',
+              content: "You're a D&D DM. If an action needs a dice roll (attack, skill check, save, etc), answer ONLY 'yes'. Else, ONLY 'no'."
+            },
+            { role: 'user', content: `Does this require a dice roll? Player action: "${action}"` }
+          ],
+        });
+        requiresRoll = /^yes/i.test(rollCheck.choices[0].message.content.trim());
+      } catch (e) {
+        requiresRoll = false; // fail safe
+      }
+
+      if (requiresRoll) {
+  // --- Get suspenseful pre-roll narrative ---
+  let setupNarrative = '';
+  try {
+    const setupRes = await openai.chat.completions.create({
+      model: 'o3-mini-2025-01-31',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a D&D game master. Describe the suspenseful setup for the player’s action, stopping at the moment a dice roll would be needed. 
+**Keep the setup concise—** respond with **no more than 3 sentences**. Capture the tension and what’s at stake, but don’t describe the result or go overboard on scene setting.`
+        },
+        { role: 'user', content: `
+Current Location: ${session.location}
+Current Party: ${partyListString || (player.name + ' the ' + player.class)}
+Situation: ${session.situation}
+NPC Focus: ${session.npc_focus}
+Player: ${player.name} the ${player.class}
+Action: "${action}"
+        `.trim() }
+      ],
+    });
+    setupNarrative = setupRes.choices[0].message.content;
+    // Truncate if it's somehow still too long
+    if (setupNarrative.length > 400) {
+      setupNarrative = setupNarrative.slice(0, 397) + '...';
+    }
+  } catch (err) {
+    setupNarrative = 'Something suspenseful happens and you must roll to find out your fate...';
+  }
+
+
+        // Store pending roll in session
+        session.pendingRoll = {
+          userId: uid,
+          player,
+          action,
+          party: session.party,
+          location: session.location,
+          situation: session.situation,
+          npc_focus: session.npc_focus
+        };
+        saveSession(session);
+
+        // ---- LOGGING THE SUSPENSE NARRATIVE ----
+        let actions = [];
+        if (fs.existsSync(actionsFilePath)) {
+          actions = JSON.parse(fs.readFileSync(actionsFilePath, 'utf8'));
+        }
+        actions.push({
+          timestamp: new Date().toISOString(),
+          type: 'pre-roll',
+          userId: uid,
+          character: { name: player.name, class: player.class },
+          action,
+          narrative: setupNarrative,
+          location: session.location,
+          situation: session.situation,
+          npc_focus: session.npc_focus
+        });
+        fs.writeFileSync(actionsFilePath, JSON.stringify(actions, null, 2));
+        // ---- END LOGGING ----
+
+
+        
+
+
+        // Send message with Roll Dice button
+        const actionRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`roll_dice_${uid}_${Date.now()}`)
+            .setLabel('🎲 Roll Dice')
+            .setStyle(ButtonStyle.Primary)
+        );
+
+        await interaction.followUp({
+          content: `**${player.name}** the *${player.class}*\n*Action Taken:* \`${action}\`\n\n${setupNarrative}\n\n**Roll a d20 to see what happens!**`,
+          components: [actionRow]
+        });
+        return; // Don't continue, wait for button
+      }
+
+      // -- Otherwise, resolve normally --
+      const prompt = `
+You are a Dungeon Master for a D&D session.
+Current Location: ${session.location}
+Current Party: ${partyListString || (player.name + ' the ' + player.class)}
+Situation: ${session.situation}
+NPC Focus: ${session.npc_focus}
+
+Player: ${player.name} the ${player.class}
+Action: "${action}"
+
+You must strictly enforce what is possible based on the current location, situation, NPCs, and what the player would logically know or be able to do. 
+- If the action tries to interact with an NPC, item, or location that has not been introduced, you must narrate that the attempt fails, that the character is confused, or that nothing happens, and encourage the player to explore or gather more information first.
+- Never allow the player to skip ahead or kill or interact with characters they haven't met.
+- Always keep story continuity and immersion. 
+If there is a party (see Current Party), mention the presence of the other party members when appropriate.
+Describe the outcome in 2–4 sentences.
+`.trim();
+
+      let narrative = '';
+      try {
+        const res = await openai.chat.completions.create({
+          model: 'o3-mini-2025-01-31',
+          messages: [
+            { role: 'system', content: 'You are a D&D game master narrating player actions.' },
+            { role: 'user', content: prompt }
+          ],
+        });
+        narrative = res.choices[0].message.content;
+      } catch (err) {
+        console.error('OpenAI error:', err);
+        narrative = '❌ Oops! I hit a snag processing that action.';
+      }
+
+      // ---- LOGGING THE ACTION TO actions.json ----
+      let actions = [];
+      if (fs.existsSync(actionsFilePath)) {
+        actions = JSON.parse(fs.readFileSync(actionsFilePath, 'utf8'));
+      }
+      actions.push({
+        timestamp: new Date().toISOString(),
+        type: 'action',
+        userId: uid,
+        character: { name: player.name, class: player.class },
+        action,
+        narrative,
+        location: session.location,
+        situation: session.situation,
+        npc_focus: session.npc_focus
+      });
+      fs.writeFileSync(actionsFilePath, JSON.stringify(actions, null, 2));
+      // ---- END LOGGING ----
+
+      
+
+      // Generate TTS audio
+      let audioBuffer;
+      try {
+        const ttsResponse = await openai.audio.speech.create({
+          model: 'gpt-4o-mini-tts',
+          voice: 'ash',
+          input: narrative,
+          instructions: ttsInstructions,
+          response_format: 'mp3',
+        });
+
+        if (ttsResponse.data) {
+          audioBuffer = Buffer.isBuffer(ttsResponse.data) ? ttsResponse.data : Buffer.from(ttsResponse.data);
+        } else if (ttsResponse.body) {
+          const chunks = [];
+          for await (const chunk of ttsResponse.body) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          }
+          audioBuffer = Buffer.concat(chunks);
+        }
+      } catch (ttsErr) {
+        console.error('TTS generation error:', ttsErr);
+      }
+
+      // Build V2 components for the story text
+      const components = [
+        { type: 10, content: `**${player.name}** the *${player.class}*` },
+        { type: 10, content: `*Action Taken:* \`${action}\`` },
+        { type: 14 },
+        { type: 10, content: narrative }
+      ];
+
+      // Always send the v2 message first (no files attached)
+      await interaction.followUp({
+        flags: 1 << 15,
+        components
+      });
+
+      // Then send a regular follow-up with just the mp3 so the player can play/download it in Discord
+      if (audioBuffer) {
+        await interaction.followUp({
+          content: '🔊 **Listen to this scene narration**',
+          files: [{ attachment: audioBuffer, name: 'narration.mp3' }]
+        });
+      }
+    }
+  }
+};
