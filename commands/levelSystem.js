@@ -168,14 +168,14 @@ async function announceLevelUp(member, newLvl, client) {
       .setTitle(`🎉 You Made It To Level 3`)
       .setDescription(
         `<@${member.id}>, you're now eligible to appear in ${liveChanMention} when you stream!\n\n` +
-        `Use the **</twitchlink:1397268075283222699>** command to link your Twitch account.\n\n` +
+        `Use the **</twitchlink:1397322569660629046>** command to link your Twitch account.\n\n` +
         `**If you have already done this, you don't need to do it again.**`
       );
   } else {
     embed
       .setTitle(`🎉 Leveled up!`)
       .setDescription(`<@${member.id}>, you just hit **Level ${newLvl}**! Keep it up!\n\n` +
-        `You can opt-out of the Coop leveling using command **</no_leveling:command_id>**`
+        `You can opt-out of the Coop leveling using command **</no_leveling:1397322569660629044>**`
       );
   }
 
