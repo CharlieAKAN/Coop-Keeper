@@ -175,7 +175,7 @@ async function announceLevelUp(member, newLvl, client) {
     embed
       .setTitle(`🎉 Leveled up!`)
       .setDescription(`<@${member.id}>, you just hit **Level ${newLvl}**! Keep it up!\n\n` +
-        `You can opt-out of the Coop leveling using command **</no_leveling:1397322569660629044>**`
+        `You can opt-out of the Coop leveling using command **</no_leveling:1397322569660629045>**`
       );
   }
 
