@@ -108,11 +108,14 @@ module.exports = {
       const mins = (Date.now() - vcJoins.get(id)) / 60000;
       vcJoins.delete(id);
 
-      // Fetch the member so we can check roles
+      if (oldState.channelId === '1357982586835701870') return; // 🚫 No XP from excluded VC
+      if (mins < 5) return; // ⏳ Must be in VC for at least 5 minutes
+
       const member = await newState.guild.members.fetch(id);
       const hasBonus = member.roles.cache.has(cfg.bonusRoleId);
       const mult     = hasBonus ? cfg.bonusMultiplier : 1;
       if (hasBonus) console.log(`💥 Bonus XP multiplier applied for ${member.user.tag} (x${mult})`);
+
       const xpGain = mins * cfg.pointsPerMinuteVC * mult;
       const lvl    = addXP(id, xpGain);
 
