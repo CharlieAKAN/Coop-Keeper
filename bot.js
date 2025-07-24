@@ -102,15 +102,25 @@ const WHITELIST = {
   // …add as many as you like
 };
 
+const BLACKLIST = [
+  '182666240370802688', // Put the Discord user ID here
+];
+
+const STREAM_COOLDOWNS = {}; // userId → lastAnnounceTimestamp (ms)
+const STREAM_COOLDOWN_MS = 8 * 60 * 60 * 1000; // 8 hours in ms
 
 client.on('presenceUpdate', async (oldP, newP) => {
   const member = newP.member;
   if (!member) return;
 
-  const sourceRoleId    = '1397318388874875004';             // your original gatekeeper role
+  if (BLACKLIST.includes(member.user.id)) {
+    console.log(`🚫 ${member.user.tag} is blacklisted from stream announcements`);
+    return;
+  }
+
+  const sourceRoleId    = '1397318388874875004';
   const announceChannel = await client.channels.fetch('1397288220668072139');
 
-  // Check if they’re whitelisted, or have the role
   const isWhitelisted = Boolean(WHITELIST[member.user.id]);
   const hasSourceRole = member.roles.cache.has(sourceRoleId);
   if (!isWhitelisted && !hasSourceRole) return;
@@ -120,6 +130,14 @@ client.on('presenceUpdate', async (oldP, newP) => {
   const isStreaming  = newP.activities.some(a => a.type === ActivityType.Streaming);
 
   if (!wasStreaming && isStreaming) {
+    const now = Date.now();
+    const last = STREAM_COOLDOWNS[member.user.id] || 0;
+    if (now - last < STREAM_COOLDOWN_MS) {
+        console.log(`⏸️ Skipping stream post for ${member.user.tag} — still in cooldown`);
+        return;
+    }
+    STREAM_COOLDOWNS[member.user.id] = now;
+
     // Grab the Discord Stream activity if they’re using the integration
     const streamAct = newP.activities.find(a => a.type === ActivityType.Streaming);
     const streamTitle = streamAct?.state || 'their stream';
