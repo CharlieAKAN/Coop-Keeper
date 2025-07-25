@@ -99,7 +99,7 @@ const WHITELIST = {
   '141814358664544256': 'https://www.twitch.tv/excalitrash',
   '332293963291557889': 'https://www.twitch.tv/kirozeru',
   '550366602734862383': 'https://www.twitch.tv/007allmight/',
-  // …add as many as you like
+  '93071518229078016': 'https://www.twitch.tv/charlieakan',
 };
 
 const BLACKLIST = [
