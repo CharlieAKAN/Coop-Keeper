@@ -30,7 +30,7 @@ module.exports = {
     fs.writeFileSync(STORE, JSON.stringify(map, null, 2));
 
     await interaction.reply({
-      content: `✅ Got it! I’ll use **${url}** when announcing you streaming.`,
+      content: `✅ Got it! I’ll use **${url}** when announcing you streaming.\n\n⚠️**MAKE SURE**⚠️\n - 1) Streamer Mode is on in your Discord settings \n - 2) Activity Privacy is set to Share Your Detected Activities with Others in your Discord settings \n\n🚨If you don't see your stream show up in Community Streams channel, let **CharlieAKAN** know🚨`,
       ephemeral: true
     });
   }

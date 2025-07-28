@@ -170,9 +170,9 @@ async function announceLevelUp(member, newLvl, client) {
     embed
       .setTitle(`🎉 You Made It To Level 3`)
       .setDescription(
-        `<@${member.id}>, you're now eligible to appear in ${liveChanMention} when you stream!\n\n` +
-        `Use the **</twitchlink:1397322569660629046>** command to link your Twitch account.\n\n` +
-        `**If you have already done this, you don't need to do it again.**`
+        `🚨<@${member.id}>, you're now eligible to appear in ${liveChanMention} when you stream!🚨\n\n` +
+        `🚨Use the **</twitchlink:1397322569660629046>** command to link your Twitch account.🚨\n\n` +
+        `**🚨If you have already done this, you don't need to do it again.🚨**`
       );
   } else {
     embed
