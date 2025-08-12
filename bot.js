@@ -6,6 +6,7 @@ const cron = require('node-cron');
 const reminderWater = require('./reminder_water.js');
 const { handleMessage, handleVoice, init: initLevels } = require('./commands/levelSystem');
 const noLeveling = require('./commands/no_leveling.js');
+const chickiesLIVE = require('./commands/chickiesLIVE');
 
 // const sessionFilePath = path.join(__dirname, 'data', 'session.json');
 // const charactersFilePath = path.join(__dirname, 'data', 'characters.json');
@@ -49,6 +50,9 @@ client.once('ready', async () => {
     await guild.members.fetch({ withPresences: true }).catch(console.error);
   }
 
+  // Start the live announcer
+  chickiesLIVE.init(client);
+  
     cron.schedule('0 12 * * 0', async () => {
         try {
             const dataFilePath = path.join(__dirname, 'data', 'waterData.json');
