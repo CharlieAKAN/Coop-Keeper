@@ -1,0 +1,27 @@
+{
+  "game": "ONE_PIECE_TCG",
+  "effectiveDate": "2025-08-30",
+  "copyLimitPerCardNumber": 4,
+
+  "bannedCards": [
+    "OP03-040",      
+    "OP06-086",      
+    "OP07-045",      
+    "OP02-117",      
+    "EB01-059",      
+    "ST10-001",      
+    "OP03-098",      
+    "OP02-024"       
+  ],
+
+  "restrictedCards": {
+    
+  },
+
+  "bannedPairs": [
+    {
+      "cardA": "OP11-040",                 
+      "forbiddenWith": ["OP11-067", "OP08-069"]
+    }
+  ]
+}

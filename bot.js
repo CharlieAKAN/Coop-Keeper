@@ -7,6 +7,7 @@ const reminderWater = require('./reminder_water.js');
 const { handleMessage, handleVoice, init: initLevels } = require('./commands/levelSystem');
 const noLeveling = require('./commands/no_leveling.js');
 const chickiesLIVE = require('./commands/chickiesLIVE');
+const tourneyButtons = require('./buttons/tourneyButtons');
 
 // const sessionFilePath = path.join(__dirname, 'data', 'session.json');
 // const charactersFilePath = path.join(__dirname, 'data', 'characters.json');
@@ -293,6 +294,16 @@ client.on('interactionCreate', async (interaction) => {
         });
         return;
     }
+
+    if (interaction.isButton()) {
+      if (tourneyButtons.handles(interaction.customId)) {
+        try { await tourneyButtons.route(interaction); }
+        catch (e) { console.error(e); if (interaction.isRepliable()) await interaction.reply({ephemeral:true, content:'⚠️ Error handling button.'}).catch(()=>{}); }
+        return;
+      }
+    }
+
+
 
     if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
