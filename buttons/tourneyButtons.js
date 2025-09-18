@@ -8,26 +8,15 @@ const {
   MessageFlags,
 } = require('discord.js');
 const { loadTournament, setPlayerFields, saveTournament } = require('../lib/store');
+const { sendThreadDM } = require('../lib/threadDM');
 
 const EPHEMERAL = (MessageFlags && MessageFlags.Ephemeral) ? MessageFlags.Ephemeral : 64;
 
-async function safeDM(client, userId, payload) {
-  try {
-    const user = await client.users.fetch(userId);
-    await user.send(payload);
-    return true;
-  } catch {
-    return false; // DMs closed
-  }
-}
-
-// -------------------- Payment flow --------------------
-async function safeDM(client, userId, payload) {
-  try {
-    const user = await client.users.fetch(userId);
-    await user.send(payload);
-    return true;
-  } catch { return false; }
+// Wrapper so the rest of this file can "message the user" without DMs.
+// Always pass the tid string to avoid undefined tid saves.
+async function threadMsg(client, tid, userId, payload, fallbackChannelId = null, name = null) {
+  const res = await sendThreadDM(client, tid, userId, payload, fallbackChannelId, name);
+  return res.ok;
 }
 
 // -------------------- Payment flow --------------------
@@ -69,14 +58,33 @@ async function paidClick(interaction, tid, userId) {
     }
   } catch {}
 
-  // Fallback to wherever the button was clicked
   if (!channel) channel = interaction.channel;
-
   await channel.send({ embeds: [embed], components: [row] });
+
+  // Drop a note into the user's private thread
+  const payInfo = t.payment || {};
+  await threadMsg(
+    interaction.client,
+    tid,
+    userId,
+    {
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`${t.meta?.name || tid} — Payment Received (Pending Review)`)
+          .setDescription([
+            `We got your **I Paid** click and will verify shortly.`,
+            payInfo.note ? `\n${payInfo.note}` : null,
+            payInfo.linkUrl ? `\nPayment link (for reference): ${payInfo.linkUrl}` : null
+          ].filter(Boolean).join(''))
+          .setTimestamp(new Date())
+          .setImage(payInfo.qrCdnUrl || null)
+      ]
+    }
+  );
 
   return interaction.reply({
     flags: EPHEMERAL,
-      content: 'Thanks! Chickies will verify shortly.' 
+    content: 'Thanks! Chickies will verify shortly.'
   });
 }
 
@@ -90,8 +98,13 @@ async function markPaid(interaction, tid, userId) {
   setPlayerFields(tid, userId, { paymentStatus: 'verified', paid: true });
   await interaction.update({ content: `✅ Marked <@${userId}> as **paid** for \`${tid}\`.`, embeds: [], components: [] });
 
-  // polite DM
-  await safeDM(interaction.client, userId, `✅ Payment verified for **${t.meta?.name || tid}**. See you in Round 1!`);
+  // notify user in their private thread, with a mention + deck submit nudge
+  await threadMsg(
+    interaction.client,
+    tid,
+    userId,
+    `✅ Payment verified for **${t.meta?.name || tid}**. See you in Round 1!\n\n<@${userId}>, you can now submit your deck for approval using command </tourney_deck_submit:1411123348938821664>`
+  );
 }
 
 async function markUnpaid(interaction, tid, userId) {
@@ -104,10 +117,11 @@ async function markUnpaid(interaction, tid, userId) {
   setPlayerFields(tid, userId, { paymentStatus: 'unpaid', paid: false });
   await interaction.update({ content: `❌ Marked <@${userId}> as **not paid** for \`${tid}\`.`, embeds: [], components: [] });
 
-  await safeDM(
+  await threadMsg(
     interaction.client,
+    tid,
     userId,
-    `❌ We couldn’t verify your payment for **${t.meta?.name || tid}**. If you paid, reply with a receipt or contact Chickies.`
+    `❌ We couldn’t verify your payment for **${t.meta?.name || tid}**. If you paid, reply here with a receipt or contact Chickies.`
   );
 }
 
@@ -125,7 +139,6 @@ async function deckApprove(interaction, tid, userId) {
   p.deck.status = 'approved';
   p.deck.approvedAt = new Date().toISOString();
   p.deck.approvedBy = interaction.user.id;
-  // (optional) lock on approval:
   p.deck.locked = true;
   saveTournament(tid, t);
 
@@ -135,9 +148,9 @@ async function deckApprove(interaction, tid, userId) {
     components: []
   });
 
-  // ✅ DM the player that their deck was approved
-  const dmOk = await safeDM(
+  const ok = await threadMsg(
     interaction.client,
+    tid,
     userId,
     {
       embeds: [
@@ -153,7 +166,6 @@ async function deckApprove(interaction, tid, userId) {
     }
   );
 
-  // Optional public broadcast to decklist channel after approval
   const deckChannelId = process.env.DECKLIST_CHANNEL_ID || t.meta?.deckChannelId || null;
   if (deckChannelId) {
     try {
@@ -175,12 +187,11 @@ async function deckApprove(interaction, tid, userId) {
     } catch {}
   }
 
-  // If DMs failed, politely notify in the review channel
-  if (!dmOk) {
+  if (!ok) {
     try {
       await interaction.followUp({
         flags: EPHEMERAL,
-        content: `ℹ️ Couldn’t DM <@${userId}> (DMs closed).`
+        content: `ℹ️ Couldn’t post to <@${userId}>'s thread.`
       });
     } catch {}
   }
@@ -199,7 +210,6 @@ async function deckReject(interaction, tid, userId) {
   p.deck.status = 'rejected';
   p.deck.rejectedAt = new Date().toISOString();
   p.deck.rejectedBy = interaction.user.id;
-  // keep locked = false so they can resubmit
   p.deck.locked = false;
   saveTournament(tid, t);
 
@@ -209,17 +219,17 @@ async function deckReject(interaction, tid, userId) {
     components: []
   });
 
-  // DM player
-  const dmOk = await safeDM(
+  const ok = await threadMsg(
     interaction.client,
+    tid,
     userId,
     `❌ Your deck for **${t.meta?.name || tid}** was **rejected**.\nPlease review the event rules and resubmit. If you need help, contact a TO.`
   );
-  if (!dmOk) {
+  if (!ok) {
     try {
       await interaction.followUp({
         flags: EPHEMERAL,
-        content: `ℹ️ Couldn’t DM <@${userId}> (DMs closed).`
+        content: `ℹ️ Couldn’t post to <@${userId}>'s thread.`
       });
     } catch {}
   }
