@@ -103,7 +103,7 @@ async function markPaid(interaction, tid, userId) {
     interaction.client,
     tid,
     userId,
-    `✅ Payment verified for **${t.meta?.name || tid}**. See you in Round 1!\n\n<@${userId}>, you can now submit your deck for approval using command </tourney_deck_submit:1411123348938821664>`
+    `✅ Payment verified for **${t.meta?.name || tid}**. See you in Round 1!\n\n<@${userId}>, you can now submit your deck for approval using command </tourney_deck_submit:1412563902386016440>`
   );
 }
 
