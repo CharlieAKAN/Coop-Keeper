@@ -185,7 +185,7 @@ async function announceLive(client, member, streamInfo, activityUrl, titleFromDi
     .setColor(0x9146ff)
     .setAuthor({ name: 'LIVE ON TWITCH 🔴', iconURL: TWITCH_ICON, url: liveUrl })
     .setTitle(`**${title}**`)
-    .setDescription(`${metaLine}`)
+    .setDescription(metaLine || '\u200B')
     .setURL(liveUrl)
     .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
     .setTimestamp();

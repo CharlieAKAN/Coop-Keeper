@@ -53,6 +53,7 @@ client.once('ready', async () => {
 
   // Start the live announcer
   chickiesLIVE.init(client);
+  initLevels(client);
   
     cron.schedule('0 12 * * 0', async () => {
         try {
